@@ -11,12 +11,13 @@
 namespace Bosma {
     using Clock = std::chrono::system_clock;
 
+    template<typename _ClockType = std::chrono::system_clock>
     class Task {
     public:
         explicit Task(std::function<void()> &&f, bool recur = false, bool interval = false) :
                 f(std::move(f)), recur(recur), interval(interval) {}
 
-        virtual Clock::time_point get_new_time() const = 0;
+        virtual typename _ClockType::time_point get_new_time() const = 0;
 
         std::function<void()> f;
 
@@ -24,18 +25,20 @@ namespace Bosma {
         bool interval;
     };
 
-    class InTask : public Task {
+    template<typename _ClockType = std::chrono::system_clock>
+    class InTask : public Task<_ClockType> {
     public:
-        explicit InTask(std::function<void()> &&f) : Task(std::move(f)) {}
+        explicit InTask(std::function<void()> &&f) : Task<_ClockType>(std::move(f)) {}
 
         // dummy time_point because it's not used
-        Clock::time_point get_new_time() const override { return Clock::time_point(Clock::duration(0)); }
+        typename _ClockType::time_point get_new_time() const override { return _ClockType::time_point(_ClockType::duration(0)); }
     };
 
-    class EveryTask : public Task {
+    template<typename _ClockType = std::chrono::system_clock>
+    class EveryTask : public Task<_ClockType> {
     public:
         EveryTask(Clock::duration time, std::function<void()> &&f, bool interval = false) :
-                Task(std::move(f), true, interval), time(time) {}
+                Task<_ClockType>(std::move(f), true, interval), time(time) {}
 
         Clock::time_point get_new_time() const override {
           return Clock::now() + time;
@@ -43,12 +46,13 @@ namespace Bosma {
         Clock::duration time;
     };
 
-    class CronTask : public Task {
+    template<typename _ClockType = std::chrono::system_clock>
+    class CronTask : public Task<_ClockType> {
     public:
-        CronTask(const std::string &expression, std::function<void()> &&f) : Task(std::move(f), true),
+        CronTask(const std::string &expression, std::function<void()> &&f) : Task<_ClockType>(std::move(f), true),
                                                                              cron(expression) {}
 
-        Clock::time_point get_new_time() const override {
+        typename _ClockType::time_point get_new_time() const override {
           return cron.cron_to_next();
         };
         Cron cron;
@@ -59,6 +63,7 @@ namespace Bosma {
       return !(ss >> std::get_time(&tm, format.c_str())).fail();
     }
 
+    template<typename _ClockType = std::chrono::system_clock>
     class Scheduler {
     public:
         explicit Scheduler(unsigned int max_n_tasks = 4) : done(false), threads(max_n_tasks + 1) {
@@ -89,37 +94,37 @@ namespace Bosma {
         }
 
         template<typename _Callable, typename... _Args>
-        void in(const Clock::time_point time, _Callable &&f, _Args &&... args) {
-          std::shared_ptr<Task> t = std::make_shared<InTask>(
+        void in(const typename _ClockType::time_point time, _Callable &&f, _Args &&... args) {
+          std::shared_ptr<Task<_ClockType>> t = std::make_shared<InTask>(
                   std::bind(std::forward<_Callable>(f), std::forward<_Args>(args)...));
           add_task(time, std::move(t));
         }
 
         template<typename _Callable, typename... _Args>
-        void in(const Clock::duration time, _Callable &&f, _Args &&... args) {
-          in(Clock::now() + time, std::forward<_Callable>(f), std::forward<_Args>(args)...);
+        void in(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
+          in(_ClockType::now() + time, std::forward<_Callable>(f), std::forward<_Args>(args)...);
         }
 
         template<typename _Callable, typename... _Args>
         void at(const std::string &time, _Callable &&f, _Args &&... args) {
           // get current time as a tm object
-          auto time_now = Clock::to_time_t(Clock::now());
+          auto time_now = _ClockType::to_time_t(_ClockType::now());
           std::tm tm = *std::localtime(&time_now);
 
           // our final time as a time_point
-          Clock::time_point tp;
+          typename _ClockType::time_point tp;
 
           if (try_parse(tm, time, "%H:%M:%S")) {
             // convert tm back to time_t, then to a time_point and assign to final
-            tp = Clock::from_time_t(std::mktime(&tm));
+            tp = _ClockType::from_time_t(std::mktime(&tm));
 
             // if we've already passed this time, the user will mean next day, so add a day.
-            if (Clock::now() >= tp)
+            if (_ClockType::now() >= tp)
               tp += std::chrono::hours(24);
           } else if (try_parse(tm, time, "%Y-%m-%d %H:%M:%S")) {
-            tp = Clock::from_time_t(std::mktime(&tm));
+            tp = _ClockType::from_time_t(std::mktime(&tm));
           } else if (try_parse(tm, time, "%Y/%m/%d %H:%M:%S")) {
-            tp = Clock::from_time_t(std::mktime(&tm));
+            tp = _ClockType::from_time_t(std::mktime(&tm));
           } else {
             // could not parse time
             throw std::runtime_error("Cannot parse time string: " + time);
@@ -129,8 +134,8 @@ namespace Bosma {
         }
 
         template<typename _Callable, typename... _Args>
-        void every(const Clock::duration time, _Callable &&f, _Args &&... args) {
-          std::shared_ptr<Task> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
+        void every(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
+          std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...));
           auto next_time = t->get_new_time();
           add_task(next_time, std::move(t));
@@ -148,15 +153,15 @@ namespace Bosma {
 //    * * * * *
         template<typename _Callable, typename... _Args>
         void cron(const std::string &expression, _Callable &&f, _Args &&... args) {
-          std::shared_ptr<Task> t = std::make_shared<CronTask>(expression, std::bind(std::forward<_Callable>(f),
+          std::shared_ptr<Task<_ClockType>> t = std::make_shared<CronTask>(expression, std::bind(std::forward<_Callable>(f),
                                                                                      std::forward<_Args>(args)...));
           auto next_time = t->get_new_time();
           add_task(next_time, std::move(t));
         }
 
         template<typename _Callable, typename... _Args>
-        void interval(const Clock::duration time, _Callable &&f, _Args &&... args) {
-          std::shared_ptr<Task> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
+        void interval(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
+          std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...), true);
           add_task(Clock::now(), std::move(t));
         }
@@ -166,11 +171,11 @@ namespace Bosma {
 
         Bosma::InterruptableSleep sleeper;
 
-        std::multimap<Clock::time_point, std::shared_ptr<Task>> tasks;
+        std::multimap<typename _ClockType::time_point, std::shared_ptr<Task<_ClockType>>> tasks;
         std::mutex lock;
         ctpl::thread_pool threads;
 
-        void add_task(const Clock::time_point time, std::shared_ptr<Task> t) {
+        void add_task(const typename _ClockType::time_point time, std::shared_ptr<Task<_ClockType>> t) {
           std::lock_guard<std::mutex> l(lock);
           tasks.emplace(time, std::move(t));
           sleeper.interrupt();
@@ -179,7 +184,7 @@ namespace Bosma {
         void manage_tasks() {
           std::lock_guard<std::mutex> l(lock);
 
-          auto end_of_tasks_to_run = tasks.upper_bound(Clock::now());
+          auto end_of_tasks_to_run = tasks.upper_bound(_ClockType::now());
 
           // if there are any tasks to be run and removed
           if (end_of_tasks_to_run != tasks.begin()) {
