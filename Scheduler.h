@@ -7,15 +7,16 @@
 
 #include "InterruptableSleep.h"
 #include "Cron.h"
+#include "TimeProvider.h"
 
 namespace Bosma {
-    template<typename _ClockType = std::chrono::system_clock>
+    template<typename _ClockType = SystemClockTimeProvider>
     class Task {
     public:
         explicit Task(std::function<void()> &&f, bool recur = false, bool interval = false) :
                 f(std::move(f)), recur(recur), interval(interval) {}
 
-        virtual typename _ClockType::time_point get_new_time() const = 0;
+        virtual typename _ClockType::TimePointType get_new_time() const = 0;
 
         std::function<void()> f;
 
@@ -23,34 +24,34 @@ namespace Bosma {
         bool interval;
     };
 
-    template<typename _ClockType = std::chrono::system_clock>
+    template<typename _ClockType = SystemClockTimeProvider>
     class InTask : public Task<_ClockType> {
     public:
         explicit InTask(std::function<void()> &&f) : Task<_ClockType>(std::move(f)) {}
 
         // dummy time_point because it's not used
-        typename _ClockType::time_point get_new_time() const override { return _ClockType::time_point(_ClockType::duration(0)); }
+        typename _ClockType::TimePointType get_new_time() const override { return _ClockType::TimePointType(_ClockType::DurationType(0)); }
     };
 
-    template<typename _ClockType = std::chrono::system_clock>
+    template<typename _ClockType = SystemClockTimeProvider>
     class EveryTask : public Task<_ClockType> {
     public:
-        EveryTask(Clock::duration time, std::function<void()> &&f, bool interval = false) :
+        EveryTask(typename _ClockType::DurationType time, std::function<void()> &&f, bool interval = false) :
                 Task<_ClockType>(std::move(f), true, interval), time(time) {}
 
-        Clock::time_point get_new_time() const override {
-          return Clock::now() + time;
+        typename _ClockType::TimePointType get_new_time() const override {
+          return _ClockType::now() + time;
         };
-        Clock::duration time;
+        typename _ClockType::DurationType time;
     };
 
-    template<typename _ClockType = std::chrono::system_clock>
+    template<typename _ClockType = SystemClockTimeProvider>
     class CronTask : public Task<_ClockType> {
     public:
         CronTask(const std::string &expression, std::function<void()> &&f) : Task<_ClockType>(std::move(f), true),
                                                                              cron(expression) {}
 
-        typename _ClockType::time_point get_new_time() const override {
+        typename _ClockType::TimePointType get_new_time() const override {
           return cron.cron_to_next();
         };
         Cron cron;
@@ -61,7 +62,7 @@ namespace Bosma {
       return !(ss >> std::get_time(&tm, format.c_str())).fail();
     }
 
-    template<typename _ClockType = std::chrono::system_clock>
+    template<typename _ClockType = SystemClockTimeProvider>
     class Scheduler {
     public:
         explicit Scheduler(unsigned int max_n_tasks = 4) : done(false), threads(max_n_tasks + 1) {
@@ -92,14 +93,14 @@ namespace Bosma {
         }
 
         template<typename _Callable, typename... _Args>
-        void in(const typename _ClockType::time_point time, _Callable &&f, _Args &&... args) {
+        void in(const typename _ClockType::TimePointType time, _Callable &&f, _Args &&... args) {
           std::shared_ptr<Task<_ClockType>> t = std::make_shared<InTask>(
                   std::bind(std::forward<_Callable>(f), std::forward<_Args>(args)...));
           add_task(time, std::move(t));
         }
 
         template<typename _Callable, typename... _Args>
-        void in(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
+        void in(const typename _ClockType::DurationType time, _Callable &&f, _Args &&... args) {
           in(_ClockType::now() + time, std::forward<_Callable>(f), std::forward<_Args>(args)...);
         }
 
@@ -132,8 +133,8 @@ namespace Bosma {
         }
 
         template<typename _Callable, typename... _Args>
-        void every(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
-          std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
+        void every(const typename _ClockType::DurationType time, _Callable &&f, _Args &&... args) {
+          std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask<_ClockType>>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...));
           auto next_time = t->get_new_time();
           add_task(next_time, std::move(t));
@@ -161,7 +162,7 @@ namespace Bosma {
         void interval(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
           std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask<_ClockType>>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...), true);
-          add_task(Clock::now(), std::move(t));
+          add_task(_ClockType::now(), std::move(t));
         }
 
     private:
@@ -169,11 +170,11 @@ namespace Bosma {
 
         Bosma::InterruptableSleep sleeper;
 
-        std::multimap<typename _ClockType::time_point, std::shared_ptr<Task<_ClockType>>> tasks;
+        std::multimap<typename _ClockType::TimePointType, std::shared_ptr<Task<_ClockType>>> tasks;
         std::mutex lock;
         ctpl::thread_pool threads;
 
-        void add_task(const typename _ClockType::time_point time, std::shared_ptr<Task<_ClockType>> t) {
+        void add_task(const typename _ClockType::TimePointType time, std::shared_ptr<Task<_ClockType>> t) {
           std::lock_guard<std::mutex> l(lock);
           tasks.emplace(time, std::move(t));
           sleeper.interrupt();

@@ -5,12 +5,11 @@
 #include <iterator>
 
 namespace Bosma {
-    using Clock = std::chrono::system_clock;
-
-    inline void add(std::tm &tm, Clock::duration time) {
-      auto tp = Clock::from_time_t(std::mktime(&tm));
+    template<typename _ClockType>
+    inline void add(std::tm &tm, typename _ClockType::DurationType time) {
+      auto tp = _ClockType::from_time_t(std::mktime(&tm));
       auto tp_adjusted = tp + time;
-      auto tm_adjusted = Clock::to_time_t(tp_adjusted);
+      auto tm_adjusted = _ClockType::to_time_t(tp_adjusted);
       tm = *std::localtime(&tm_adjusted);
     }
 
@@ -48,6 +47,7 @@ namespace Bosma {
       }
     }
 
+    template<typename _ClockType>
     class Cron {
     public:
         explicit Cron(const std::string &expression) {
@@ -65,13 +65,13 @@ namespace Bosma {
         }
 
         // http://stackoverflow.com/a/322058/1284550
-        Clock::time_point cron_to_next(const Clock::time_point from = Clock::now()) const {
+        typename _ClockType::TimePointType cron_to_next(const typename _ClockType::TimePointType from = _ClockType::now()) const {
           // get current time as a tm object
-          auto now = Clock::to_time_t(from);
+          auto now = _ClockType::to_time_t(from);
           std::tm next(*std::localtime(&now));
           // it will always at least run the next minute
           next.tm_sec = 0;
-          add(next, std::chrono::minutes(1));
+          add<_ClockType>(next, std::chrono::minutes(1));
           while (true) {
             if (month != -1 && next.tm_mon != month) {
               // add a month
@@ -88,24 +88,24 @@ namespace Bosma {
               continue;
             }
             if (day != -1 && next.tm_mday != day) {
-              add(next, std::chrono::hours(24));
+              add<_ClockType>(next, std::chrono::hours(24));
               next.tm_hour = 0;
               next.tm_min = 0;
               continue;
             }
             if (day_of_week != -1 && next.tm_wday != day_of_week) {
-              add(next, std::chrono::hours(24));
+              add<_ClockType>(next, std::chrono::hours(24));
               next.tm_hour = 0;
               next.tm_min = 0;
               continue;
             }
             if (hour != -1 && next.tm_hour != hour) {
-              add(next, std::chrono::hours(1));
+              add<_ClockType>(next, std::chrono::hours(1));
               next.tm_min = 0;
               continue;
             }
             if (minute != -1 && next.tm_min != minute) {
-              add(next, std::chrono::minutes(1));
+              add<_ClockType>(next, std::chrono::minutes(1));
               continue;
             }
             break;
@@ -113,7 +113,7 @@ namespace Bosma {
 
           // telling mktime to figure out dst
           next.tm_isdst = -1;
-          return Clock::from_time_t(std::mktime(&next));
+          return _ClockType::from_time_t(std::mktime(&next));
         }
 
         int minute, hour, day, month, day_of_week;
