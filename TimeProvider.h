@@ -8,6 +8,7 @@ class SystemClockTimeProvider {
 public:
   using TimePointType = std::chrono::system_clock::time_point;
   using DurationType = std::chrono::system_clock::duration;
+  using CompareType = std::less<std::chrono::system_clock::time_point>;
 
   static TimePointType now() {
     return std::chrono::system_clock::now();
@@ -19,6 +20,10 @@ public:
 
   static const TimePointType from_time_t(time_t timet) {
     return std::chrono::system_clock::from_time_t(timet);
+  }
+
+  static const std::chrono::system_clock::time_point convertToTimePoint(TimePointType tp) {
+    return tp;
   }
 };
 

@@ -54,7 +54,7 @@ namespace Bosma {
         typename _ClockType::TimePointType get_new_time() const override {
           return cron.cron_to_next();
         };
-        Cron cron;
+        Cron<_ClockType> cron;
     };
 
     inline bool try_parse(std::tm &tm, const std::string &expression, const std::string &format) {
@@ -72,7 +72,7 @@ namespace Bosma {
                   sleeper.sleep();
                 } else {
                   auto time_of_first_task = (*tasks.begin()).first;
-                  sleeper.sleep_until(time_of_first_task);
+                  sleeper.sleep_until(_ClockType::convertToTimePoint(time_of_first_task));
                 }
                 manage_tasks();
               }
@@ -159,7 +159,7 @@ namespace Bosma {
         }
 
         template<typename _Callable, typename... _Args>
-        void interval(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
+        void interval(const typename _ClockType::DurationType time, _Callable &&f, _Args &&... args) {
           std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask<_ClockType>>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...), true);
           add_task(_ClockType::now(), std::move(t));
@@ -170,7 +170,11 @@ namespace Bosma {
 
         Bosma::InterruptableSleep sleeper;
 
-        std::multimap<typename _ClockType::TimePointType, std::shared_ptr<Task<_ClockType>>> tasks;
+        std::multimap<
+            typename _ClockType::TimePointType,
+            std::shared_ptr<Task<_ClockType>>,
+            typename _ClockType::CompareType
+        > tasks;
         std::mutex lock;
         ctpl::thread_pool threads;
 
