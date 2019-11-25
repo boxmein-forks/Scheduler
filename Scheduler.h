@@ -9,8 +9,6 @@
 #include "Cron.h"
 
 namespace Bosma {
-    using Clock = std::chrono::system_clock;
-
     template<typename _ClockType = std::chrono::system_clock>
     class Task {
     public:
@@ -153,7 +151,7 @@ namespace Bosma {
 //    * * * * *
         template<typename _Callable, typename... _Args>
         void cron(const std::string &expression, _Callable &&f, _Args &&... args) {
-          std::shared_ptr<Task<_ClockType>> t = std::make_shared<CronTask>(expression, std::bind(std::forward<_Callable>(f),
+          std::shared_ptr<Task<_ClockType>> t = std::make_shared<CronTask<_ClockType>>(expression, std::bind(std::forward<_Callable>(f),
                                                                                      std::forward<_Args>(args)...));
           auto next_time = t->get_new_time();
           add_task(next_time, std::move(t));
@@ -161,7 +159,7 @@ namespace Bosma {
 
         template<typename _Callable, typename... _Args>
         void interval(const typename _ClockType::duration time, _Callable &&f, _Args &&... args) {
-          std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask>(time, std::bind(std::forward<_Callable>(f),
+          std::shared_ptr<Task<_ClockType>> t = std::make_shared<EveryTask<_ClockType>>(time, std::bind(std::forward<_Callable>(f),
                                                                                 std::forward<_Args>(args)...), true);
           add_task(Clock::now(), std::move(t));
         }
