@@ -62,6 +62,10 @@ namespace Bosma {
           verify_and_set(tokens[2], expression, day, 1, 31);
           verify_and_set(tokens[3], expression, month, 1, 12, true);
           verify_and_set(tokens[4], expression, day_of_week, 0, 6);
+          // Support variation of cron where weekday 7 = Sunday
+          if (day_of_week == 7) {
+            day_of_week = 0;
+          }
         }
 
         // http://stackoverflow.com/a/322058/1284550
