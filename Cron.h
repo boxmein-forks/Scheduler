@@ -3,6 +3,7 @@
 #include <sstream>
 #include <vector>
 #include <iterator>
+#include <iostream>
 
 namespace Bosma {
     template<typename _ClockType>
@@ -71,8 +72,8 @@ namespace Bosma {
         // http://stackoverflow.com/a/322058/1284550
         typename _ClockType::TimePointType cron_to_next(const typename _ClockType::TimePointType from = _ClockType::now()) const {
           // get current time as a tm object
-          auto now = _ClockType::to_time_t(from);
-          std::tm next(*std::localtime(&now));
+          auto next = _ClockType::to_struct_tm(from);
+          std::cout << "cron_to_next: current time: " << from << std::endl;
           // it will always at least run the next minute
           next.tm_sec = 0;
           add<_ClockType>(next, std::chrono::minutes(1));
@@ -117,6 +118,8 @@ namespace Bosma {
 
           // telling mktime to figure out dst
           next.tm_isdst = -1;
+
+          std::cout << "cron_to_next: time this task should run next: " << std::mktime(&next) << std::endl;
           return _ClockType::from_time_t(std::mktime(&next));
         }
 

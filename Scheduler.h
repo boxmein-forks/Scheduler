@@ -2,6 +2,7 @@
 
 #include <iomanip>
 #include <map>
+#include <iostream>
 
 #include "ctpl_stl.h"
 
@@ -52,7 +53,9 @@ namespace Bosma {
                                                                              cron(expression) {}
 
         typename _ClockType::TimePointType get_new_time() const override {
-          return cron.cron_to_next();
+          auto next = cron.cron_to_next();
+          std::cout << "CronTask: next time = " << next << std::endl;
+          return next;
         };
         Cron<_ClockType> cron;
     };
@@ -107,23 +110,22 @@ namespace Bosma {
         template<typename _Callable, typename... _Args>
         void at(const std::string &time, _Callable &&f, _Args &&... args) {
           // get current time as a tm object
-          auto time_now = _ClockType::to_time_t(_ClockType::now());
-          std::tm tm = *std::localtime(&time_now);
+          std::tm caltime  = _ClockType::to_struct_tm(_ClockType::now());
 
           // our final time as a time_point
           typename _ClockType::time_point tp;
 
-          if (try_parse(tm, time, "%H:%M:%S")) {
+          if (try_parse(caltime, time, "%H:%M:%S")) {
             // convert tm back to time_t, then to a time_point and assign to final
-            tp = _ClockType::from_time_t(std::mktime(&tm));
+            tp = _ClockType::from_time_t(std::mktime(&caltime));
 
             // if we've already passed this time, the user will mean next day, so add a day.
             if (_ClockType::now() >= tp)
               tp += std::chrono::hours(24);
-          } else if (try_parse(tm, time, "%Y-%m-%d %H:%M:%S")) {
-            tp = _ClockType::from_time_t(std::mktime(&tm));
-          } else if (try_parse(tm, time, "%Y/%m/%d %H:%M:%S")) {
-            tp = _ClockType::from_time_t(std::mktime(&tm));
+          } else if (try_parse(caltime, time, "%Y-%m-%d %H:%M:%S")) {
+            tp = _ClockType::from_time_t(std::mktime(&caltime));
+          } else if (try_parse(caltime, time, "%Y/%m/%d %H:%M:%S")) {
+            tp = _ClockType::from_time_t(std::mktime(&caltime));
           } else {
             // could not parse time
             throw std::runtime_error("Cannot parse time string: " + time);
@@ -156,7 +158,7 @@ namespace Bosma {
                                                                                      std::forward<_Args>(args)...));
           auto next_time = t->get_new_time();
           add_task(next_time, std::move(t));
-        }
+          }
 
         template<typename _Callable, typename... _Args>
         void interval(const typename _ClockType::DurationType time, _Callable &&f, _Args &&... args) {
